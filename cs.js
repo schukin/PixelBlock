@@ -28,6 +28,13 @@ window.onload = function () {
   redEye.style.cursor = 'pointer';
   document.getElementsByTagName('body')[0].appendChild(redEye);
 
+  var greyBlock = document.createElement('img');
+  greyBlock.src = chrome.extension.getURL('images/grey-block.png');
+  greyBlock.id = 'grey-block';
+  greyBlock.style.display = 'none';
+  document.getElementsByTagName('body')[0].appendChild(greyBlock);
+  console.log("GREY BLOCK ADDED");
+
   // add boostrap
   var bs = document.createElement('script');
   bs.id = 'bs-script';

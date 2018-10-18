@@ -16,7 +16,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://mail.google.com/*"],
+      "matches": ["*://mail.superhuman.com/*"],
       "js": ["cs.js"],
       "run_at":"document_end"
     }

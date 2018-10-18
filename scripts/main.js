@@ -3,9 +3,8 @@
  */
 var pixelblock = (function(){
 
-  var gmail = null,
-      safe_pattern  = '?safe-img-pbza#',
-      proxy_pattern = 'googleusercontent.com/proxy';
+  var safe_pattern  = '?safe-img-pbza#',
+      proxy_pattern = 'media.superhumanapp.com/images/_/';
 
   var blacklist = [{name:'Sidekick',     pattern:'t.signaux',              url:'http://getsidekick.com'},
                    {name:'Sidekick',     pattern:'t.senal',                url:'http://getsidekick.com'},
@@ -150,52 +149,305 @@ var pixelblock = (function(){
     return url.substring(url.indexOf('#')+1);
   }
 
+  // var scan_images = function(){
+  //   try {
+  //     // Note: For some reason gmail.js seems to crash once in a while, add a check to re-init it
+  //     var threadPane = $('.ThreadPane-messages');
+  //     //var emails = threadPane.find('div.h7[processed!="true"]');
+  //     var messagePanes = threadPane.find('.MessagePane');
+
+  //     var blockedSources = [];
+  //     var allowedSources = [];
+
+  //     // go through all open emails on screen
+  //     for(var x = 0; x < messagePanes.length; x++){
+  //       var messagePane = messagePanes[x], tracking_image_found = false;
+  //       var iframe = $(messagePane).find('iframe');
+  //       var iframeContents = iframe.contents();
+  
+  //       // loop over all images in this email
+  //       $("img[src]", iframeContents).each(function(){
+  //         var src = this.src;
+  //         if(src.indexOf(proxy_pattern) > 0 && src.indexOf(safe_pattern) == -1){
+  //           if(is_blacklisted(this)){
+  //             this.setAttribute('tracker', 'true');
+  //             tracking_image_found = true;
+  //             blockedSources.push(src);
+  //           }else{
+  //             whitelist_image(this);
+  //             allowedSources.push(src);
+  //           }
+  //         }
+  //       });
+
+  //       var logInfo = true;
+
+  //       if (logInfo) {
+  //         var totalSources = blockedSources.length + allowedSources.length;
+  //         console.group("PixelBlock: Found " + blockedSources.length + " / " + totalSources + " tracking pixels");
+
+  //         for (var i = 0; i < blockedSources.length; i++) {
+  //           var src = blockedSources[i];
+  //           console.log("Blocked " + src);
+  //         }
+
+  //         for (var i = 0; i < allowedSources.length; i++) {
+  //           var src = allowedSources[i];
+  //           console.log("Allowed " + src);
+  //         }
+
+  //         console.groupEnd();  
+  //       }
+  
+  //       // show 'eye'
+  //       if(tracking_image_found) show_tracking_eye(messagePane);
+  
+  //       // Handle no images mode
+  //       if($("div.ado", messagePane).length == 0) messagePane.setAttribute('processed', 'true');
+  //     }
+  //   }catch(e){
+  //     console.log('PixelBlock Error: ' + e);
+  //   }
+  // }
+
+  var blockImagesInIframeContents = function(iframeContents) {
+      // loop over all images in this email
+      $("img[src]", iframeContents).each(function(){
+        var src = this.src;
+
+        var noticeDiv = $('<div class="superhuman-pixel-block-notice">Blocked</div>');
+        noticeDiv.data('imgsrc', src);
+
+        var $img = $(this);
+        noticeDiv.insertAfter($img);
+        $img.removeAttr('src');
+
+        blockedImageCount = blockedImageCount + 1;
+      });
+  };
+
   var scan_images = function(){
     try {
+      var greyBlockImgSrc = null;
+      var greyBlock = $('#grey-block');
+
+      if (greyBlock.length > 0) {
+        greyBlockImgSrc = greyBlock[0].src;
+      }
+
       // Note: For some reason gmail.js seems to crash once in a while, add a check to re-init it
-      if (typeof gmail == 'undefined') gmail = Gmail();
-   
-      var body = gmail.dom.email_body();
-  
-      var emails = $(body[0]).find('div.h7[processed!="true"]');
+      var threadPane = $('.ThreadPane-messages');
+      //var emails = threadPane.find('div.h7[processed!="true"]');
+      var messagePanes = threadPane.find('.MessagePane');
+
       // go through all open emails on screen
-      for(var x = 0; x < emails.length; x++){
-        var email = emails[x], tracking_image_found = false;
+      for(var x = 0; x < messagePanes.length; x++){
+        var messagePane = messagePanes[x], tracking_image_found = false;
+        var iframe = $(messagePane).find('iframe');
+
+        if (iframe.length > 0) {
+          var iframeMutationObserver;
+          iframeMutationObserver = new MutationObserver(function (mutations) {
+            iframeMutationObserver.disconnect();
+
+            var target = mutations[0].target;
+            var iframeContents = $(target).contents();
+            var blockedImageCount = 0;
+            var blockedSources = [];
+            
+            // loop over all images in this email
+            $("img[src]", iframeContents).each(function(){
+              var src = this.src;
+
+              var noticeDiv = $('<div class="superhuman-pixel-block-notice"></div>');
+              var backgroundCss = "url(" + greyBlockImgSrc + ")";
+              noticeDiv.css('background', backgroundCss);
+              noticeDiv.css('width', '15px');
+              noticeDiv.css('height', '15px');
+              noticeDiv.css('background-size', '15px 15px');
+              noticeDiv.attr('title', src);
+              noticeDiv.data('imgsrc', src);
+
+              var $img = $(this);
+              noticeDiv.insertAfter($img);
+              $img.removeAttr('src');
+
+              blockedImageCount = blockedImageCount + 1;
+              blockedSources.push(src);
+            });
+
+            var blockedDomains = [];
+
+            for (var i = 0; i < blockedSources.length; i++) {
+              var blockedSource = blockedSources[i];
+              var trimmedSource = blockedSource.replace(/https:\/\/media.superhumanapp.com\/images\/_\//g,'');
+              var regExp = /https:\/\/(.*?)\//g;
+              var matches = regExp.exec(trimmedSource);
+
+              if (matches != null && matches.length > 0) {
+                blockedDomains.push(matches[1]);
+              }
+            }
+
+            var onlyUnique = function(value, index, self) { 
+                return self.indexOf(value) === index;
+            };
+
+            var uniqueBlockedDomains = blockedDomains.filter(onlyUnique);
+
+            console.group("PixelBlock: Blocked " + blockedSources.length + " images (" + uniqueBlockedDomains.length + " domains)");
+            
+            for (var i = 0; i < uniqueBlockedDomains.length; i++) {
+              var blockedDomain = blockedDomains[i];
+
+              console.log("PixelBlock: Blocked " + blockedDomain);
+            }
+
+            console.groupEnd();
+          });
+
+          iframeMutationObserver.observe(iframe.get(0), {
+            attributes: true,
+            characterData: false,
+            childList: false,
+            subtree: false,
+            attributeOldValue: false,
+            characterDataOldValue: false
+          });
+        }
+
+        // var iframeContents = iframe.contents();
   
         // loop over all images in this email
-        $("img[src]", email).each(function(){
-          var src = this.src;
-          if(src.indexOf(proxy_pattern) > 0 && src.indexOf(safe_pattern) == -1){
-            if(is_blacklisted(this)){
-              this.setAttribute('tracker', 'true');
-              tracking_image_found = true;
-            }else{
-              whitelist_image(this);
-            }
-          }
-        });
+        // $("img[src]", iframeContents).each(function(){
+        //   var src = this.src;
+
+        //   var noticeDiv = $('<div class="superhuman-pixel-block-notice">Blocked</div>');
+        //   noticeDiv.data('imgsrc', src);
+
+        //   var $img = $(this);
+        //   noticeDiv.insertAfter($img);
+        //   $img.removeAttr('src');
+
+        //   blockedImageCount = blockedImageCount + 1;
+        // });
   
-        // show 'eye'
-        if(tracking_image_found) show_tracking_eye(email);
+        // // show 'eye'
+        // if(tracking_image_found) show_tracking_eye(messagePane);
   
-        // Handle no images mode
-        if($("div.ado", email).length == 0) email.setAttribute('processed', 'true');
+        // // Handle no images mode
+        // if($("div.ado", messagePane).length == 0) messagePane.setAttribute('processed', 'true');
       }
     }catch(e){
       console.log('PixelBlock Error: ' + e);
     }
-    setTimeout(scan_images, 100);
   }
 
   var init = function(){
     // add bootstrap.js
     $('#bs-script').attr('src', $('#bs-script').attr('data-src'));
     // init gmail.js
-    gmail = Gmail();
   }
 
+  var didAddExpandedMessageObserver = false;
+  var didAddThreadListObserver = false;
+
+  var addExpandedMessageObserver = function() {
+    if (didAddExpandedMessageObserver) {
+      return;
+    }
+
+    var threadPaneMessages = $('.ThreadPane-messages');
+
+    if (threadPaneMessages.length > 0) {
+      // Observe new messages being expanded
+      var expandedMessageObserver = new MutationObserver(function(mutations) {
+
+        var newExpandedMessagePanes = false;
+
+        for (var i = 0; i < mutations.length; i++) {
+          var mutation = mutations[i];
+
+          var $target = $(mutation.target);
+          if ($target.hasClass('MessagePane-expanded')) {
+            newExpandedMessagePanes = true;
+            break;
+          }
+        }
+
+        if (newExpandedMessagePanes) {
+          console.log("PixelBlocker: Expanded message(s)");
+          scan_images();
+
+          // Keep trying to add the other observer, in case it
+          // hasn't been added already (all these divs are lazy loaded by Superhuman)
+          addThreadListObserver();
+        }
+      });
+
+      expandedMessageObserver.observe(threadPaneMessages.get(0), {
+        attributes: false,
+        characterData: false,
+        childList: true,
+        subtree: true,
+        attributeOldValue: false,
+        characterDataOldValue: false
+      });
+
+      didAddExpandedMessageObserver = true;
+      console.log("PixelBlocker: Added expanded message observer");
+    }
+  };
+
+  var addThreadListObserver = function() {
+    if (didAddThreadListObserver) {
+      return;
+    }
+
+    var threadPaneView = $('.ThreadPaneView');
+
+    if (threadPaneView.length > 0) {
+      // Observe the thread pane view being visible (i.e. going from Inbox to Conversation view)
+      var threadPaneViewObserver = new MutationObserver(function (mutations) {
+        var openedThreadView = false;
+
+        for (var i = 0; i < mutations.length; i++) {
+          var mutation = mutations[i];
+
+          var $target = $(mutation.target);
+          if ($target.hasClass('ThreadPaneView') && $target.hasClass('isVisible')) {
+            openedThreadView = true;
+            break;
+          }
+        }
+
+        if (openedThreadView) {
+          console.log("PixelBlocker: Opened thread view");
+          scan_images();
+
+          // Keep trying to add the other observer, in case it
+          // hasn't been added already (all these divs are lazy loaded by Superhuman)
+          addExpandedMessageObserver();
+        }
+      });
+
+      threadPaneViewObserver.observe(threadPaneView.get(0), {
+        attributes: true,
+        characterData: false,
+        childList: false,
+        subtree: false,
+        attributeOldValue: false,
+        characterDataOldValue: false
+      });
+
+      didAddThreadListObserver = true;
+      console.log("PixelBlocker: Added thread list observer");
+    }
+  };
+
   var start = function(){
-    setTimeout(scan_images, 450);
+    addExpandedMessageObserver();
+    addThreadListObserver();
   }
 
   return {init:init, start:start};
